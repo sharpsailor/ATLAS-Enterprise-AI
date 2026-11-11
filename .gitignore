@@ -1,0 +1,13 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# editors / OS (incl. Windows files copied into WSL)
+.idea/
+.DS_Store
+*:Zone.Identifier
+*.log
