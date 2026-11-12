@@ -152,7 +152,7 @@ All settings are read from environment variables or `.env` (see [`app/config.py`
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` | – / `us-east-1` | S3 credentials (`auto` region for R2) |
 | `S3_BUCKET` | `atlas-docs` | Document bucket |
 | `MAX_UPLOAD_BYTES` | 10 MB | Ingestion size limit |
-| `MAX_CHUNKS` | `0` (off) | Chunks per document (150 ≈ 60 pages on the live demo), so one upload can't use up the free LLM quota |
+| `MAX_CHUNKS` | `0` (off) | Chunks per document (400 ≈ 160 pages on the live demo), so one upload can't use up the free LLM quota |
 | `OLLAMA_URL`, `LLM_MODEL`, `EMBED_MODEL` | `localhost:11434`, `llama3.2`, `mxbai-embed-large` | Local models |
 | `GEMINI_API_KEY` | – | When set, uses Gemini instead of Ollama |
 | `GEMINI_CHAT_MODEL`, `GEMINI_EMBED_MODEL` | `gemini-3.5-flash-lite`, `gemini-embedding-001` | Hosted models |
