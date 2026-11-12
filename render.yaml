@@ -1,0 +1,32 @@
+# Render Blueprint: Dashboard > New > Blueprint > pick this repo. Secrets (sync: false) are asked for at creation.
+services:
+  - type: web
+    name: atlas
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
+    healthCheckPath: /health/live
+    envVars:
+      - key: DATABASE_URL          # Neon connection string (includes sslmode=require)
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_HOST   # a separate 1024-dim cosine index, not the local Ollama one
+        sync: false
+      - key: AWS_ENDPOINT_URL      # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+        sync: false
+      - key: AWS_ACCESS_KEY_ID     # R2 API token access key
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        value: auto
+      - key: S3_BUCKET
+        value: atlas-docs
+      - key: APP_PASSWORD          # any username, this password
+        sync: false
+      - key: RIUS_API_KEY
+        sync: false

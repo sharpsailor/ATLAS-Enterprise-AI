@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Enterprise AI</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Atlas</h1>
+    <nav role="tablist">
+      <button role="tab" data-tab="chat" aria-selected="true">Chat</button>
+      <button role="tab" data-tab="upload">Upload</button>
+      <button role="tab" data-tab="documents">Documents</button>
+      <button role="tab" data-tab="approvals">Approvals</button>
+      <button role="tab" data-tab="metrics">Metrics</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="chat" role="tabpanel">
+      <div id="messages" aria-live="polite"></div>
+      <form id="chat-form">
+        <label for="question" class="sr-only">Question</label>
+        <textarea id="question" rows="2" minlength="3" maxlength="2000" required
+                  placeholder="Ask about company policies…"></textarea>
+        <div class="row">
+          <button type="button" id="new-chat" class="secondary">New chat</button>
+          <button type="submit">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="upload" role="tabpanel" hidden>
+      <form id="upload-form">
+        <label for="file">Document (PDF, DOCX, TXT, MD, up to 10 MB)</label>
+        <input id="file" type="file" accept=".pdf,.docx,.txt,.md" required>
+        <button type="submit">Upload and ingest</button>
+      </form>
+      <p id="upload-status" role="status"></p>
+    </section>
+
+    <section id="documents" role="tabpanel" hidden>
+      <table><thead><tr><th>Title</th><th>Status</th><th>Chunks</th><th>Uploaded</th></tr></thead>
+        <tbody id="doc-rows"></tbody></table>
+    </section>
+
+    <section id="approvals" role="tabpanel" hidden>
+      <ul id="approval-list" class="cards"></ul>
+    </section>
+
+    <section id="metrics" role="tabpanel" hidden>
+      <div id="metric-tiles" class="tiles"></div>
+    </section>
+  </main>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
