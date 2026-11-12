@@ -13,7 +13,7 @@ No sign-up needed. A sample handbook is preloaded; click a starter question, and
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![LLM](https://img.shields.io/badge/LLM-Ollama%20%7C%20Gemini-8E75B2)
 
-![Atlas chat: a cited answer, a memory follow-up, a blocked prompt-injection and a request sent for approval](docs/screenshot-chat.png)
+![Atlas live demo: a cited answer with the step-by-step pipeline that produced it](docs/screenshot-chat.png)
 
 Company knowledge lives in policies, handbooks and procedures that nobody can find. A plain chatbot makes this worse: it invents answers, can't see current documents, and will do whatever a clever prompt tells it to. Atlas answers **only from your uploaded documents**, shows which passage each claim came from, refuses when the evidence isn't there, and puts a human in the loop before anything sensitive happens.
 
