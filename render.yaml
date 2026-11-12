@@ -25,6 +25,8 @@ services:
         sync: false
       - key: AWS_DEFAULT_REGION
         value: auto
+      - key: MIN_RELEVANCE         # tuned on Gemini scores: unrelated ~0.58-0.62, matches ~0.69+
+        value: "0.64"
       - key: S3_BUCKET
         value: atlas-docs
       - key: APP_PASSWORD          # any username, this password

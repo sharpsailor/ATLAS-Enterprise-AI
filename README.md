@@ -151,7 +151,7 @@ All settings are read from environment variables or `.env` (see [`app/config.py`
 | `GEMINI_CHAT_MODEL`, `GEMINI_EMBED_MODEL` | `gemini-3.5-flash-lite`, `gemini-embedding-001` | Hosted models |
 | `EMBED_DIM` | `1024` | Must match the Pinecone index |
 | `PINECONE_API_KEY`, `PINECONE_INDEX_HOST` | – | Vector index |
-| `MIN_RELEVANCE` | `0.45` | Similarity cutoff for evidence. Tune it for your embedding model |
+| `MIN_RELEVANCE` | `0.45` | Similarity cutoff for evidence: 0.45 suits Ollama `mxbai`, 0.64 suits Gemini (set in `render.yaml`) |
 | `HITL_ENABLED` | `true` | Route sensitive requests to approval |
 | `MEMORY_TURNS` | `6` | Conversation turns loaded per question |
 | `APP_PASSWORD` | – | When set, protects the app with HTTP Basic auth (health checks stay open) |
