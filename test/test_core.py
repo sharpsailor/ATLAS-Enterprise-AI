@@ -113,18 +113,28 @@ def test_password_gate():
     from fastapi.testclient import TestClient
 
     from app.config import settings
-    from app.main import app
+    from app.main import app, principal
     c, old = TestClient(app), settings.app_password
     settings.app_password = "s3cret"
     try:
-        assert c.get("/").status_code == 200                      # public demo: UI and reads stay open
+        assert c.get("/").status_code == 200                       # public: UI and chat stay open
         assert c.get("/health/live").status_code == 200
         up = "/api/documents/uploads"
-        assert c.post(up, json={}).status_code == 401              # admin writes need the password
+        r = c.post(up, json={})
+        assert r.status_code == 401 and "www-authenticate" in r.headers  # writes prompt for the password
         assert c.post(up, json={}, auth=("any", "wrong")).status_code == 401
         assert c.post(up, json={}, headers={"Authorization": "Basic !!notbase64"}).status_code == 401
         assert c.post("/api/approvals/x/decision", json={}).status_code == 401
+        for path in ("/api/approvals", "/api/admin/metrics", "/api/admin/guardrails"):
+            r = c.get(path)                                         # admin reads: refused, but no login box
+            assert r.status_code == 401 and "www-authenticate" not in r.headers, path
+        assert "www-authenticate" in c.get("/admin", follow_redirects=False).headers
+        assert c.get("/admin", auth=("any", "s3cret"), follow_redirects=False).status_code == 307
         assert c.post(up, json={}, auth=("any", "s3cret")).status_code == 422  # past the gate (body invalid)
+
+        class Req:  # visitors are never admin, and lose the admins group
+            headers = {}
+        assert principal(Req()) == {"tenant": "novacore", "sub": "demo-user", "admin": False, "groups": ["all-staff"]}
     finally:
         settings.app_password = old
 

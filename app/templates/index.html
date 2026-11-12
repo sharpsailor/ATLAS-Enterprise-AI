@@ -9,6 +9,7 @@
 </head>
 <body>
   <header>
+   <div class="wrap head">
     <div class="brand">
       <h1>Atlas <span>Enterprise AI</span></h1>
       <p class="tagline">Ask questions about company documents. Every answer is grounded in the documents, cited, checked by guardrails, and shows the steps it took.</p>
@@ -22,10 +23,13 @@
       <button role="tab" data-tab="approvals">Approvals</button>
       <button role="tab" data-tab="metrics">Metrics</button>
     </nav>
+   </div>
   </header>
 
-  <main>
-    <section id="chat" role="tabpanel">
+  <main class="wrap">
+    <section id="chat" role="tabpanel" class="chat-tab">
+     <div class="chat-layout">
+      <div class="chat-panel">
       <div id="messages" aria-live="polite"></div>
       <form id="chat-form">
         <label for="question" class="sr-only">Question</label>
@@ -36,6 +40,25 @@
           <button type="submit">Send</button>
         </div>
       </form>
+      </div>
+      <aside class="sidebar" aria-label="About this demo">
+        <h3>Behind every answer</h3>
+        <ol class="mini-steps">
+          <li><b>Input guardrail</b> blocks injection and secret requests</li>
+          <li><b>Approval check</b> sends risky actions to a human</li>
+          <li><b>Memory</b> loads earlier turns for follow-ups</li>
+          <li><b>Retrieve</b> finds relevant passages in Pinecone</li>
+          <li><b>Relevance gate</b> refuses instead of guessing</li>
+          <li><b>Generate</b> answers only from passages, with citations</li>
+          <li><b>Output guardrail</b> stops leaked secrets</li>
+        </ol>
+        <p class="note">Open "How this answer was made" under any reply to see these steps with real timings.</p>
+        <h3>Loaded documents</h3>
+        <ul id="loaded-docs" class="doc-list"><li class="note">Loading…</li></ul>
+        <h3>Powered by</h3>
+        <p class="powered">FastAPI · LangGraph · Gemini · Pinecone · PostgreSQL (Neon) · S3 (Backblaze B2) · Render</p>
+      </aside>
+     </div>
     </section>
 
     <section id="about" role="tabpanel" hidden>

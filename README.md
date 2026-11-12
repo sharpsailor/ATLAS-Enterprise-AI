@@ -160,7 +160,7 @@ All settings are read from environment variables or `.env` (see [`app/config.py`
 | `MIN_RELEVANCE` | `0.45` | Similarity cutoff for evidence: 0.45 suits Ollama `mxbai`, 0.64 suits Gemini (set in `render.yaml`) |
 | `HITL_ENABLED` | `true` | Route sensitive requests to approval |
 | `MEMORY_TURNS` | `6` | Conversation turns loaded per question |
-| `APP_PASSWORD` | – | When set, uploads and approval decisions need this admin password (HTTP Basic). Chat and reads stay public |
+| `APP_PASSWORD` | – | When set, visitors are ordinary users and only requests with this password (HTTP Basic, sign in at `/admin`) are admin: uploads, approvals and metrics. Chat stays public |
 | `CHAT_LIMIT_PER_HOUR` | `0` (off) | Chat questions per visitor IP per hour, to protect the LLM quota |
 | `RIUS_API_KEY`, `RIUS_DISABLED`, `RIUS_CAPTURE_CONTENT` | –, `false`, `false` | Optional tracing |
 

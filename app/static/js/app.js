@@ -6,7 +6,10 @@ async function api(path, body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new Error("Admin only: this public demo lets visitors chat; uploads and approval decisions need the admin password.");
+  if (res.status === 401) {
+    throw new Error(body === undefined ? "admin only"
+      : "Admin only: this public demo lets visitors chat; uploads and approval decisions need the admin password.");
+  }
   if (!res.ok) {
     const err = new Error(typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`);
     err.data = data;  // blocked chats still carry their pipeline steps
@@ -26,8 +29,26 @@ const loaders = { documents: loadDocuments, approvals: loadApprovals, metrics: l
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => {
   document.querySelectorAll("nav button").forEach((x) => x.setAttribute("aria-selected", x === b));
   document.querySelectorAll("main section").forEach((s) => (s.hidden = s.id !== b.dataset.tab));
-  loaders[b.dataset.tab]?.();
+  loaders[b.dataset.tab]?.()?.catch((err) => adminOnly(b.dataset.tab, err));
 }));
+
+// Admin tabs explain themselves to visitors instead of failing silently.
+function adminOnly(tab, err) {
+  const target = { approvals: "#approval-list", metrics: "#metric-tiles", documents: "#doc-rows" }[tab];
+  const msg = err.message === "admin only"
+    ? el("p", { className: "note" }, "This view is for admins. Visitors can use Chat and How it works. ",
+         el("a", { href: "/admin", textContent: "Admin sign-in" }))
+    : el("p", { className: "note", textContent: `Could not load: ${err.message}` });
+  $(target).replaceChildren(tab === "documents" ? el("tr", {}, el("td", { colSpan: 4 }, msg)) : el("li", {}, msg));
+}
+
+// Sidebar: which documents the answers come from.
+api("/api/documents").then((docs) => {
+  const ready = docs.filter((d) => d.status === "ready");
+  $("#loaded-docs").replaceChildren(...(ready.length ? ready.map((d) => el("li", {},
+    el("span", { textContent: d.title }), el("span", { className: "meta", textContent: `${d.chunk_count} chunks` })))
+    : [el("li", { className: "note", textContent: "No documents yet." })]));
+}).catch(() => $("#loaded-docs").replaceChildren(el("li", { className: "note", textContent: "Unavailable right now." })));
 
 // Chat
 const labels = { pending_approval: "Sent for approval", no_evidence: "No evidence found",

@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -40,23 +40,6 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
-@app.middleware("http")
-async def password_gate(request: Request, call_next):
-    """When APP_PASSWORD is set, HTTP Basic auth guards the writes that cost storage or quota (uploads) or act
-    as admin (approval decisions). Everything else stays public so visitors can try the demo. Not per-user auth."""
-    path = request.url.path
-    admin_write = request.method == "POST" and (path.startswith("/api/documents") or path.startswith("/api/approvals/"))
-    if settings.app_password and admin_write:
-        try:
-            scheme, _, token = request.headers.get("authorization", "").partition(" ")
-            password = base64.b64decode(token).decode().partition(":")[2] if scheme.lower() == "basic" else ""
-        except ValueError:
-            password = ""
-        if not secrets.compare_digest(password.encode(), settings.app_password.encode()):
-            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="atlas"'})
-    return await call_next(request)
-
-
 # ponytail: in-memory, per process, IPs never evicted; fine for one small instance, use Redis if it scales out
 _chat_hits: dict[str, deque] = defaultdict(deque)
 
@@ -75,14 +58,31 @@ def chat_rate_limit(request: Request) -> None:
     hits.append(now)
 
 
-def principal() -> dict:
-    # Auth is out of scope: a fixed demo principal. Replace this one function with real token parsing.
-    return {"tenant": "novacore", "sub": "demo-user", "groups": ["all-staff", "admins"], "admin": True}
+def _password_ok(request: Request) -> bool:
+    try:
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        password = base64.b64decode(token).decode().partition(":")[2] if scheme.lower() == "basic" else ""
+    except ValueError:
+        return False
+    return secrets.compare_digest(password.encode(), settings.app_password.encode())
 
 
-def admin(p: dict = Depends(principal)) -> dict:
+def principal(request: Request) -> dict:
+    """Who is calling. Without APP_PASSWORD (local dev) everyone is admin. With it, visitors are ordinary
+    staff and only a request carrying the password (HTTP Basic) is admin. Not per-user auth: replace this one
+    function with real token parsing for that."""
+    is_admin = not settings.app_password or _password_ok(request)
+    return {"tenant": "novacore", "sub": "demo-user", "admin": is_admin,
+            "groups": ["all-staff", "admins"] if is_admin else ["all-staff"]}
+
+
+def admin(request: Request, p: dict = Depends(principal)) -> dict:
     if not p["admin"]:
-        raise HTTPException(403, "admin only")
+        # Only writes and the /admin sign-in page trigger the browser's password prompt, so visitors
+        # opening an admin tab get a message instead of a surprise login box.
+        challenge = request.method != "GET" or request.url.path == "/admin"
+        raise HTTPException(401, "admin only",
+                            headers={"WWW-Authenticate": 'Basic realm="atlas admin"'} if challenge else None)
     return p
 
 
@@ -114,6 +114,12 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
+@app.get("/admin", include_in_schema=False)
+def admin_sign_in(_: dict = Depends(admin)):
+    """Visit to sign in as admin: the browser asks for the password once, then sends it on every request."""
+    return RedirectResponse("/")
+
+
 @app.get("/health/live")
 def live():
     return {"status": "ok"}
@@ -129,7 +135,7 @@ def ready():
 
 
 @app.post("/api/documents/uploads")
-def create_upload(body: UploadIn, p: dict = Depends(principal)):
+def create_upload(body: UploadIn, p: dict = Depends(admin)):
     name = Path(body.filename).name
     ext = Path(name).suffix.lower()
     if ext not in ALLOWED_TYPES:
@@ -144,7 +150,7 @@ def create_upload(body: UploadIn, p: dict = Depends(principal)):
 
 
 @app.post("/api/documents/complete")
-def complete_upload(body: CompleteIn, p: dict = Depends(principal)):
+def complete_upload(body: CompleteIn, p: dict = Depends(admin)):
     doc = q("select s3_key from documents where id = %s and tenant_id = %s", (body.document_id, p["tenant"]), one=True)
     if not doc:
         raise HTTPException(404, "document not found")
