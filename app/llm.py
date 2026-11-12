@@ -1,6 +1,7 @@
 """LLM + embeddings, standing in for Bedrock. Gemini when GEMINI_API_KEY is set (hosted), else local Ollama."""
 import re
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import httpx
 
@@ -10,10 +11,6 @@ from app.observability import trace
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 # mxbai-embed-large wants this prefix on queries (not on documents) for retrieval.
 OLLAMA_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-
-
-def chat_model_name() -> str:
-    return settings.gemini_chat_model if settings.gemini_api_key else settings.llm_model
 
 
 def embed_model_name() -> str:
@@ -67,20 +64,48 @@ def embed(texts: list[str], query: bool = False) -> list[list[float]]:
     return vectors
 
 
+def _gemini_answer(model: str, system: str, messages: list[dict]) -> str:
+    data = _gemini(f"{model}:generateContent", {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+                     for m in messages],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 750},
+    })
+    # A safety block returns a candidate without content.
+    parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+    return "".join(p.get("text", "") for p in parts).strip() or "No answer was generated for this question."
+
+
+# ponytail: a slow loser keeps running in its thread until its HTTP call ends; fine at demo traffic
+_hedge_pool = ThreadPoolExecutor(max_workers=8)
+
+
+def _hedged(fn, models: list[str], after: float):
+    """Call fn(model) on the first model; if it hasn't answered within `after` seconds (or failed), also try the
+    backup and return whichever succeeds first, as (result, model). Free-tier Gemini mostly answers in 2-3 s but
+    sometimes queues for 30 s; this cuts that tail."""
+    futures = {_hedge_pool.submit(fn, models[0]): models[0]}
+    done, _ = wait(futures, timeout=after)
+    if len(models) > 1 and (not done or next(iter(done)).exception()):
+        futures[_hedge_pool.submit(fn, models[1])] = models[1]
+    pending, errors = set(futures), []
+    while pending:
+        done, pending = wait(pending, return_when=FIRST_COMPLETED)
+        for f in done:
+            if f.exception() is None:
+                return f.result(), futures[f]
+            errors.append(f.exception())
+    raise errors[0]
+
+
 @trace("answer")
-def answer(system: str, messages: list[dict]) -> str:
+def answer(system: str, messages: list[dict]) -> tuple[str, str]:
+    """(answer text, model that produced it)."""
     if settings.gemini_api_key:
-        data = _gemini(f"{settings.gemini_chat_model}:generateContent", {
-            "systemInstruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-                         for m in messages],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 750},
-        })
-        # A safety block returns a candidate without content.
-        parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts).strip() or "No answer was generated for this question."
+        models = [m for m in (settings.gemini_chat_model, settings.gemini_backup_model) if m]
+        return _hedged(lambda m: _gemini_answer(m, system, messages), models, settings.hedge_after_seconds)
     return _ollama("chat", {
         "model": settings.llm_model, "stream": False,
         "messages": [{"role": "system", "content": system}, *messages],
         "options": {"temperature": 0.1, "num_predict": 750},
-    })["message"]["content"].strip()
+    })["message"]["content"].strip(), settings.llm_model

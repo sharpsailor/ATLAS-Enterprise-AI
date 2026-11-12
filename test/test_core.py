@@ -103,7 +103,7 @@ def test_gemini_payloads():
         req = sent[-1][1]["requests"][0]
         assert req["taskType"] == "RETRIEVAL_QUERY" and req["outputDimensionality"] == settings.embed_dim
         assert llm.answer("sys", [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"},
-                                  {"role": "user", "content": "q2"}]) == "Answer [1]"
+                                  {"role": "user", "content": "q2"}]) == ("Answer [1]", settings.gemini_chat_model)
         body = sent[-1][1]
         assert [c["role"] for c in body["contents"]] == ["user", "model", "user"]
         assert body["systemInstruction"]["parts"][0]["text"] == "sys"
@@ -139,6 +139,26 @@ def test_gemini_retries_429():
         assert slept[1:] == [1.0, 2.0, 4.0]  # exponential when no delay given, then gives up
     finally:
         llm.httpx.post, llm.time.sleep = old_post, old_sleep
+
+
+def test_hedged_backup_wins_when_first_is_slow():
+    import time
+
+    from app import llm
+    slow = lambda m: (time.sleep(0.5), "slow")[1] if m == "a" else "fast"
+    assert llm._hedged(slow, ["a", "b"], after=0.05) == ("fast", "b")       # backup answers first
+    assert llm._hedged(slow, ["b", "a"], after=0.05) == ("fast", "b")       # quick first model: no backup needed
+
+    def first_fails(m):
+        if m == "a":
+            raise RuntimeError("503")
+        return "ok"
+    assert llm._hedged(first_fails, ["a", "b"], after=5) == ("ok", "b")     # a fast failure tries the backup at once
+    try:
+        llm._hedged(lambda m: 1 / 0, ["a", "b"], after=0.01)
+        raise AssertionError("expected the error when both fail")
+    except ZeroDivisionError:
+        pass
 
 
 def test_password_gate():

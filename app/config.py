@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # Hosted: setting GEMINI_API_KEY switches chat + embeddings from Ollama to Gemini
     gemini_api_key: str = ""
     gemini_chat_model: str = "gemini-3.5-flash-lite"
+    gemini_backup_model: str = "gemini-3.1-flash-lite"  # asked too when the first is slow; "" = off
+    hedge_after_seconds: float = 6.0
     gemini_embed_model: str = "gemini-embedding-001"
 
     pinecone_api_key: str = ""

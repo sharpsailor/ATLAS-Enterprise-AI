@@ -80,10 +80,10 @@ def generate(s: State) -> State:
                 "score": round(h["score"], 3), "excerpt": h["text"][:300]}
                for i, h in enumerate(s["hits"], 1)]
     t = time.perf_counter()
-    answer = llm.answer(SYSTEM_PROMPT, messages)
+    answer, model = llm.answer(SYSTEM_PROMPT, messages)
     return {"answer": answer, "sources": sources, "status": "answered",
             "steps": [step("Generate answer", "pass",
-                           f"{llm.chat_model_name()} answered from {len(sources)} cited passage"
+                           f"{model} answered from {len(sources)} cited passage"
                            f"{'s' if len(sources) != 1 else ''}, instructed to use nothing else", t)]}
 
 
