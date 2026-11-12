@@ -43,6 +43,28 @@ def test_parse_text():
     assert parse("a.md", "hello\nworld".encode()) == [(1, "hello\nworld")]
 
 
+def test_parse_caps():
+    import io
+    import zipfile
+
+    from worker import ingest
+    old = ingest.MAX_UNZIPPED_BYTES, ingest.MAX_TEXT_CHARS
+    ingest.MAX_UNZIPPED_BYTES, ingest.MAX_TEXT_CHARS = 1000, 50
+    try:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("word/document.xml", "0" * 5000)  # tiny compressed, 5000 bytes expanded
+        for name, data in (("bomb.docx", buf.getvalue()), ("long.txt", b"x" * 51)):
+            try:
+                ingest.parse(name, data)
+                raise AssertionError(f"{name} was not rejected")
+            except ValueError:
+                pass
+        assert ingest.parse("ok.txt", b"x" * 50) == [(1, "x" * 50)]
+    finally:
+        ingest.MAX_UNZIPPED_BYTES, ingest.MAX_TEXT_CHARS = old
+
+
 def test_gemini_payloads():
     """Request shape for Gemini, with the HTTP call faked (no key or network needed)."""
     from app import llm
