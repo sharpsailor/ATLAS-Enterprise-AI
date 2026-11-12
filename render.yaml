@@ -29,8 +29,8 @@ services:
         value: "0.64"
       - key: S3_BUCKET
         value: atlas-docs
-      - key: MAX_CHUNKS            # per document (~160 pages), protects the free Gemini quota
-        value: "400"
+      - key: MAX_CHUNKS            # per document (~60 pages), protects the free Gemini quota
+        value: "150"
       - key: CHAT_LIMIT_PER_HOUR   # per visitor IP, protects the free Gemini quota
         value: "20"
       - key: APP_PASSWORD          # admin password for uploads and approval decisions
