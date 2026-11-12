@@ -29,7 +29,9 @@ services:
         value: "0.64"
       - key: S3_BUCKET
         value: atlas-docs
-      - key: APP_PASSWORD          # any username, this password
+      - key: CHAT_LIMIT_PER_HOUR   # per visitor IP, protects the free Gemini quota
+        value: "20"
+      - key: APP_PASSWORD          # admin password for uploads and approval decisions
         sync: false
       - key: RIUS_API_KEY
         sync: false

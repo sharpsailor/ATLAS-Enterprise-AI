@@ -4,13 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atlas Enterprise AI</title>
+  <meta name="description" content="Enterprise knowledge assistant: grounded answers with citations, guardrails, human approval and an audit trail.">
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
   <header>
-    <h1>Atlas</h1>
-    <nav role="tablist">
+    <div class="brand">
+      <h1>Atlas <span>Enterprise AI</span></h1>
+      <p class="tagline">Ask questions about company documents. Every answer is grounded in the documents, cited, checked by guardrails, and shows the steps it took.</p>
+    </div>
+    <a class="repo" href="https://github.com/sharpsailor/ATLAS-Enterprise-AI" target="_blank" rel="noopener">View code on GitHub ↗</a>
+    <nav role="tablist" aria-label="Sections">
       <button role="tab" data-tab="chat" aria-selected="true">Chat</button>
+      <button role="tab" data-tab="about">How it works</button>
       <button role="tab" data-tab="upload">Upload</button>
       <button role="tab" data-tab="documents">Documents</button>
       <button role="tab" data-tab="approvals">Approvals</button>
@@ -24,7 +30,7 @@
       <form id="chat-form">
         <label for="question" class="sr-only">Question</label>
         <textarea id="question" rows="2" minlength="3" maxlength="2000" required
-                  placeholder="Ask about company policies…"></textarea>
+                  placeholder="Ask about NovaCore's policies… (Enter to send, Shift+Enter for a new line)"></textarea>
         <div class="row">
           <button type="button" id="new-chat" class="secondary">New chat</button>
           <button type="submit">Send</button>
@@ -32,8 +38,49 @@
       </form>
     </section>
 
+    <section id="about" role="tabpanel" hidden>
+      <h2>What problem it solves</h2>
+      <p>Company knowledge is scattered across policies and handbooks. A plain chatbot makes this worse: it invents
+        answers, can't see your documents, and does whatever a clever prompt tells it to. Atlas answers
+        <strong>only from uploaded documents</strong>, cites the passage behind each claim, refuses when the evidence
+        isn't there, and sends risky requests to a human instead of acting on them.</p>
+
+      <h2>What happens when you ask a question</h2>
+      <ol class="flow">
+        <li><b>Input guardrail</b>Blocks prompt injection and attempts to extract secrets.</li>
+        <li><b>Sensitive-action check</b>Delete, export, send or policy changes go to a human approval queue. The model never sees them.</li>
+        <li><b>Memory</b>Earlier turns load from Postgres, so follow-up questions work.</li>
+        <li><b>Retrieve</b>The question becomes a vector, and Pinecone finds the closest passages this user is allowed to see.</li>
+        <li><b>Relevance gate</b>If no passage is relevant enough, Atlas refuses instead of guessing.</li>
+        <li><b>Generate</b>The LLM answers from those passages only and cites them, like [1].</li>
+        <li><b>Output guardrail</b>Withholds any answer that looks like it leaks keys or passwords.</li>
+      </ol>
+      <p class="note">Every answer in the chat shows these steps, with the real numbers and timings from that request.</p>
+
+      <h2>What happens when a document is uploaded</h2>
+      <ol class="flow">
+        <li><b>Direct upload</b>The browser sends the file straight to object storage using a short-lived signed URL.</li>
+        <li><b>Sandboxed parsing</b>PDF, DOCX and text are read in a separate process with memory and time limits.</li>
+        <li><b>Chunk and embed</b>The text is split into overlapping 1200-character chunks, and each becomes a 1024-dimension vector.</li>
+        <li><b>Index</b>The vectors are stored in Pinecone with access-control metadata. The document is then marked ready.</li>
+      </ol>
+
+      <h2>Running this demo</h2>
+      <ul class="stack">
+        <li><b>API and UI</b>FastAPI on Render</li>
+        <li><b>Workflow</b>LangGraph</li>
+        <li><b>LLM and embeddings</b>Google Gemini</li>
+        <li><b>Vector search</b>Pinecone</li>
+        <li><b>Database</b>PostgreSQL on Neon</li>
+        <li><b>File storage</b>S3-compatible Backblaze B2</li>
+      </ul>
+      <p class="note">The same code also runs fully locally, with Ollama, LocalStack S3 and Docker Postgres.
+        Built by <a href="https://github.com/sharpsailor" target="_blank" rel="noopener">@sharpsailor</a>.</p>
+    </section>
+
     <section id="upload" role="tabpanel" hidden>
       <form id="upload-form">
+        <p class="note">Uploading is admin-only in the public demo. The sample handbook is already loaded.</p>
         <label for="file">Document (PDF, DOCX, TXT, MD, up to 10 MB)</label>
         <input id="file" type="file" accept=".pdf,.docx,.txt,.md" required>
         <button type="submit">Upload and ingest</button>
@@ -47,6 +94,7 @@
     </section>
 
     <section id="approvals" role="tabpanel" hidden>
+      <p class="note">Requests to delete, export, send or change policy land here instead of going to the model. Approving records the decision; nothing is executed.</p>
       <ul id="approval-list" class="cards"></ul>
     </section>
 

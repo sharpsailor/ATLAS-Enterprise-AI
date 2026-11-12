@@ -2,6 +2,10 @@
 
 **A company knowledge assistant you can trust: grounded answers with citations, guardrails, human approval for risky requests, and an audit trail.**
 
+### [▶ Try the live demo](https://atlas-jyzv.onrender.com)
+
+No sign-up needed. A sample handbook is preloaded; click a starter question, and every answer shows the steps the system took to produce it.
+
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-RAG_workflow-1C3C3C)
@@ -24,6 +28,7 @@ Company knowledge lives in policies, handbooks and procedures that nobody can fi
 | **Access control** | Every vector carries `allowed_groups` and `owner_sub`. Search is filtered by them, and each tenant gets its own Pinecone namespace. |
 | **Direct-to-S3 uploads** | The browser uploads with a 5-minute presigned URL, so large files never pass through the API. |
 | **Audit and metrics** | Uploads, ingestion, guardrail blocks and approval decisions are written to `audit_events`. A metrics tab shows document status, feedback and block counts. |
+| **Visible reasoning trail** | Every answer lists the steps that produced it: guardrail checks, memory, embedding, vector search with relevance scores, generation and the output check, each with real timings. |
 | **Observability** | Optional GlassFlow Rius tracing on every graph node, embedding call and search. Content is never captured. |
 | **Runs anywhere** | Fully local with Docker, LocalStack and Ollama, or hosted on free tiers with Render, Neon, Cloudflare R2 and Gemini. |
 
@@ -130,10 +135,11 @@ Hosted setup: Render for the app, Neon for Postgres, Cloudflare R2 for files, Ge
    [{"AllowedOrigins":["https://<your-service>.onrender.com"],"AllowedMethods":["PUT"],
      "AllowedHeaders":["Content-Type"],"ExposeHeaders":["ETag"],"MaxAgeSeconds":3000}]
    ```
-5. **Render**: go to Dashboard > New > Blueprint and pick this repo. [`render.yaml`](render.yaml) defines the service and asks for each secret. **Set `APP_PASSWORD`**: the URL is public, and this puts a browser login prompt in front of the whole app.
-6. Open the URL, log in with any username and your `APP_PASSWORD`, upload the sample handbook, and run the prompts above.
+5. **Render**: go to Dashboard > New > Blueprint and pick this repo. [`render.yaml`](render.yaml) defines the service and asks for each secret. **Set `APP_PASSWORD`**: visitors can chat without it, but uploads and approval decisions need it.
+6. Open the URL, upload the sample handbook (the browser asks for any username plus `APP_PASSWORD`), and run the prompts above.
+7. Optional: [`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) pings the site every 10 minutes so visitors skip Render's cold start. Change its URL to yours.
 
-> Free-tier behaviour: Render sleeps after 15 minutes idle, and the first request after that takes about a minute. Neon suspends after 5 minutes idle. Gemini's free daily limits are low: each chat uses 2 calls and each upload uses about 1 call per 32 chunks. When you hit a limit, you get HTTP 429.
+> Free-tier behaviour: Render sleeps after 15 minutes idle (the keep-alive workflow prevents this), and a cold start takes about a minute. Neon suspends after 5 minutes idle. Gemini's free daily limits are low: each chat uses 2 calls and each upload uses about 1 call per 32 chunks. When you hit a limit, you get HTTP 429.
 
 ## Configuration
 
@@ -154,7 +160,8 @@ All settings are read from environment variables or `.env` (see [`app/config.py`
 | `MIN_RELEVANCE` | `0.45` | Similarity cutoff for evidence: 0.45 suits Ollama `mxbai`, 0.64 suits Gemini (set in `render.yaml`) |
 | `HITL_ENABLED` | `true` | Route sensitive requests to approval |
 | `MEMORY_TURNS` | `6` | Conversation turns loaded per question |
-| `APP_PASSWORD` | – | When set, protects the app with HTTP Basic auth (health checks stay open) |
+| `APP_PASSWORD` | – | When set, uploads and approval decisions need this admin password (HTTP Basic). Chat and reads stay public |
+| `CHAT_LIMIT_PER_HOUR` | `0` (off) | Chat questions per visitor IP per hour, to protect the LLM quota |
 | `RIUS_API_KEY`, `RIUS_DISABLED`, `RIUS_CAPTURE_CONTENT` | –, `false`, `false` | Optional tracing |
 
 ## API
@@ -179,8 +186,8 @@ Chat `status` is one of `answered`, `no_evidence`, `pending_approval` or `guardr
 
 ```text
 app/
-  main.py           FastAPI routes, HITL routing, password gate, audit calls
-  graph.py          LangGraph workflow: guard → retrieve → generate → validate
+  main.py           FastAPI routes, HITL routing, admin gate, rate limit, audit calls
+  graph.py          LangGraph workflow: guard → retrieve → generate → validate, with per-step traces
   llm.py            Embeddings + chat: Gemini when keyed, else Ollama
   vector.py         Pinecone upsert and ACL-filtered search
   aws.py            S3 client, presigned uploads, size-capped reads

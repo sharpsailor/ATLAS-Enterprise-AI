@@ -28,7 +28,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://atlas:atlas@localhost:5440/atlas"
 
-    app_password: str = ""  # set when hosted: browser login prompt for the whole app
+    app_password: str = ""  # set when hosted: admin password for uploads and approval decisions
+    chat_limit_per_hour: int = 0  # per visitor IP; 0 = unlimited
 
     min_relevance: float = 0.45
     hitl_enabled: bool = True

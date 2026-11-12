@@ -117,14 +117,34 @@ def test_password_gate():
     c, old = TestClient(app), settings.app_password
     settings.app_password = "s3cret"
     try:
-        assert c.get("/").status_code == 401
-        assert c.get("/", auth=("any", "wrong")).status_code == 401
-        assert c.get("/", headers={"Authorization": "Basic !!notbase64"}).status_code == 401
-        assert c.get("/", auth=("any", "s3cret")).status_code == 200
+        assert c.get("/").status_code == 200                      # public demo: UI and reads stay open
         assert c.get("/health/live").status_code == 200
+        up = "/api/documents/uploads"
+        assert c.post(up, json={}).status_code == 401              # admin writes need the password
+        assert c.post(up, json={}, auth=("any", "wrong")).status_code == 401
+        assert c.post(up, json={}, headers={"Authorization": "Basic !!notbase64"}).status_code == 401
+        assert c.post("/api/approvals/x/decision", json={}).status_code == 401
+        assert c.post(up, json={}, auth=("any", "s3cret")).status_code == 422  # past the gate (body invalid)
     finally:
         settings.app_password = old
-    assert c.get("/").status_code == 200  # gate off when unset
+
+
+def test_chat_rate_limit():
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.config import settings
+    c, old = TestClient(main.app), settings.chat_limit_per_hour
+    settings.chat_limit_per_hour = 2
+    main._chat_hits.clear()
+    try:
+        hdr = {"X-Forwarded-For": "spoofed, 203.0.113.7"}
+        # The limiter runs before body validation, so invalid bodies (422) still count, with no LLM or DB needed.
+        assert [c.post("/api/chat", json={}, headers=hdr).status_code for _ in range(3)] == [422, 422, 429]
+        assert c.post("/api/chat", json={}, headers={"X-Forwarded-For": "203.0.113.8"}).status_code == 422
+    finally:
+        settings.chat_limit_per_hour = old
+        main._chat_hits.clear()
 
 
 if __name__ == "__main__":

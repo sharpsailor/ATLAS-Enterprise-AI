@@ -1,0 +1,14 @@
+# Render's free plan sleeps after 15 idle minutes, and the next visitor waits about a minute.
+# Pinging every 10 minutes keeps it awake; one always-on service fits in the 750 free hours a month.
+# GitHub pauses scheduled workflows after 60 days without repo activity; re-enable it in the Actions tab.
+name: keep-alive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 https://atlas-jyzv.onrender.com/health/live

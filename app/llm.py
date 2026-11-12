@@ -9,6 +9,14 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 OLLAMA_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 
+def chat_model_name() -> str:
+    return settings.gemini_chat_model if settings.gemini_api_key else settings.llm_model
+
+
+def embed_model_name() -> str:
+    return settings.gemini_embed_model if settings.gemini_api_key else settings.embed_model
+
+
 def _gemini(method: str, body: dict) -> dict:
     r = httpx.post(f"{GEMINI_URL}/{method}", json=body, timeout=120,
                    headers={"x-goog-api-key": settings.gemini_api_key})

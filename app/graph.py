@@ -1,5 +1,10 @@
-"""LangGraph RAG workflow: guard -> retrieve -> (generate -> validate | no_evidence)."""
-from typing import TypedDict
+"""LangGraph RAG workflow: guard -> retrieve -> (generate -> validate | no_evidence).
+
+Each node also appends a step (what it did, with real numbers and timing) that the UI shows under the answer.
+"""
+import operator
+import time
+from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -26,12 +31,22 @@ class State(TypedDict, total=False):
     answer: str
     sources: list[dict]
     status: str
+    steps: Annotated[list[dict], operator.add]  # appended to by every node
+
+
+def step(name: str, result: str, detail: str, started: float) -> dict:
+    """One pipeline step for the UI. result is 'pass', 'stop' or 'info'."""
+    return {"name": name, "result": result, "detail": detail, "ms": round((time.perf_counter() - started) * 1000)}
 
 
 @trace("guard")
 def guard(s: State) -> State:
-    return {"status": "guardrail_blocked", "answer": "Request blocked by input guardrail."} \
-        if classify_input(s["question"]) else {}
+    # The API already checked the input; this re-check keeps the graph safe if it is ever called directly.
+    t = time.perf_counter()
+    if rule := classify_input(s["question"]):
+        return {"status": "guardrail_blocked", "answer": "Request blocked by input guardrail.",
+                "steps": [step("Input guardrail", "stop", f"matched rule: {rule}", t)]}
+    return {}
 
 
 @trace("retrieve")
@@ -40,8 +55,19 @@ def retrieve(s: State) -> State:
     prev = next((m["content"] for m in reversed(s.get("history", [])) if m["role"] == "user"), "")
     query = f"{prev}\n{s['question']}".strip()
     p = s["principal"]
-    hits = vector.search(p["tenant"], llm.embed([query], query=True)[0], p)
-    return {"hits": [h for h in hits if h["score"] >= settings.min_relevance]}
+    t = time.perf_counter()
+    vector_ = llm.embed([query], query=True)[0]
+    embedded = step("Embed question", "pass",
+                    f"{llm.embed_model_name()} turned the question{' + previous question' if prev else ''} "
+                    f"into a {len(vector_)}-dimension vector", t)
+    t = time.perf_counter()
+    hits = vector.search(p["tenant"], vector_, p)
+    kept = [h for h in hits if h["score"] >= settings.min_relevance]
+    best = f", best match {hits[0]['score']:.2f}" if hits else ""
+    searched = step("Search documents", "pass" if kept else "stop",
+                    f"Pinecone returned {len(hits)} passages you may access{best}; "
+                    f"{len(kept)} scored above the {settings.min_relevance} relevance cutoff", t)
+    return {"hits": kept, "steps": [embedded, searched]}
 
 
 @trace("generate")
@@ -53,16 +79,27 @@ def generate(s: State) -> State:
     sources = [{"n": i, "document_id": h["document_id"], "title": h["title"], "page": int(h["page"]),
                 "score": round(h["score"], 3), "excerpt": h["text"][:300]}
                for i, h in enumerate(s["hits"], 1)]
-    return {"answer": llm.answer(SYSTEM_PROMPT, messages), "sources": sources, "status": "answered"}
+    t = time.perf_counter()
+    answer = llm.answer(SYSTEM_PROMPT, messages)
+    return {"answer": answer, "sources": sources, "status": "answered",
+            "steps": [step("Generate answer", "pass",
+                           f"{llm.chat_model_name()} answered from {len(sources)} cited passage"
+                           f"{'s' if len(sources) != 1 else ''}, instructed to use nothing else", t)]}
 
 
 @trace("validate")
 def validate(s: State) -> State:
-    return {"answer": BLOCKED, "sources": [], "status": "guardrail_blocked"} if check_output(s["answer"]) else {}
+    t = time.perf_counter()
+    if rule := check_output(s["answer"]):
+        return {"answer": BLOCKED, "sources": [], "status": "guardrail_blocked",
+                "steps": [step("Output guardrail", "stop", f"withheld the answer: matched {rule}", t)]}
+    return {"steps": [step("Output guardrail", "pass", "no keys, passwords or secrets in the answer", t)]}
 
 
 def no_evidence(s: State) -> State:
-    return {"answer": NO_EVIDENCE, "sources": [], "status": "no_evidence"}
+    t = time.perf_counter()
+    return {"answer": NO_EVIDENCE, "sources": [], "status": "no_evidence",
+            "steps": [step("Refuse", "stop", "no passage was relevant enough, so the model was not asked to guess", t)]}
 
 
 g = StateGraph(State)
@@ -78,5 +115,5 @@ workflow = g.compile()
 
 
 @trace("chat")
-def chat(question: str, history: list[dict], principal: dict) -> State:
-    return workflow.invoke({"question": question, "history": history, "principal": principal})
+def chat(question: str, history: list[dict], principal: dict, steps: list[dict] | None = None) -> State:
+    return workflow.invoke({"question": question, "history": history, "principal": principal, "steps": steps or []})

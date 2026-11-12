@@ -1,12 +1,15 @@
 import base64
 import re
 import secrets
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -15,7 +18,7 @@ from app import observability
 from app.aws import presign_put
 from app.config import settings
 from app.db import audit, q
-from app.graph import chat
+from app.graph import chat, step
 from app.guardrails import classify_input
 from app.memory import list_messages, load_history, save_turn
 from worker.ingest import process_s3_key
@@ -39,8 +42,11 @@ templates = Jinja2Templates(directory=HERE / "templates")
 
 @app.middleware("http")
 async def password_gate(request: Request, call_next):
-    """HTTP Basic auth on everything but health checks, when APP_PASSWORD is set. Not per-user auth."""
-    if settings.app_password and not request.url.path.startswith("/health"):
+    """When APP_PASSWORD is set, HTTP Basic auth guards the writes that cost storage or quota (uploads) or act
+    as admin (approval decisions). Everything else stays public so visitors can try the demo. Not per-user auth."""
+    path = request.url.path
+    admin_write = request.method == "POST" and (path.startswith("/api/documents") or path.startswith("/api/approvals/"))
+    if settings.app_password and admin_write:
         try:
             scheme, _, token = request.headers.get("authorization", "").partition(" ")
             password = base64.b64decode(token).decode().partition(":")[2] if scheme.lower() == "basic" else ""
@@ -49,6 +55,24 @@ async def password_gate(request: Request, call_next):
         if not secrets.compare_digest(password.encode(), settings.app_password.encode()):
             return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="atlas"'})
     return await call_next(request)
+
+
+# ponytail: in-memory, per process, IPs never evicted; fine for one small instance, use Redis if it scales out
+_chat_hits: dict[str, deque] = defaultdict(deque)
+
+
+def chat_rate_limit(request: Request) -> None:
+    """Per-visitor cap on chat questions (CHAT_LIMIT_PER_HOUR, 0 = off) so one person can't drain the LLM quota."""
+    if not settings.chat_limit_per_hour:
+        return
+    # Render's proxy appends the real client IP last; earlier X-Forwarded-For entries are client-supplied.
+    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[-1].strip()
+    hits, now = _chat_hits[ip], time.monotonic()
+    while hits and hits[0] < now - 3600:
+        hits.popleft()
+    if len(hits) >= settings.chat_limit_per_hour:
+        raise HTTPException(429, "You've reached the demo limit for this hour. Please try again a bit later.")
+    hits.append(now)
 
 
 def principal() -> dict:
@@ -138,24 +162,43 @@ def list_documents(p: dict = Depends(principal)):
                 order by created_at desc limit 100""", (p["tenant"], p["groups"], p["sub"]))
 
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(chat_rate_limit)])
 def chat_route(body: ChatIn, p: dict = Depends(principal)):
     conv = str(body.conversation_id or uuid4())
+    t = time.perf_counter()
     if rule := classify_input(body.question):
         audit(p["sub"], p["tenant"], "guardrail_input_blocked", rule=rule)
-        raise HTTPException(400, "Request blocked by input guardrail.")
-    if settings.hitl_enabled and SENSITIVE.search(body.question):
+        return JSONResponse(status_code=400, content={
+            "detail": "Request blocked by input guardrail.", "status": "guardrail_blocked", "conversation_id": conv,
+            "steps": [step("Input guardrail", "stop", f"matched rule '{rule}', so nothing reached the model", t)]})
+    steps = [step("Input guardrail", "pass", "no prompt injection or secret-extraction patterns", t)]
+    t = time.perf_counter()
+    if settings.hitl_enabled and (m := SENSITIVE.search(body.question)):
         row = q("insert into approvals (tenant_id, requester, question) values (%s, %s, %s) returning id",
                 (p["tenant"], p["sub"], body.question), one=True)
         audit(p["sub"], p["tenant"], "approval_requested", approval_id=str(row["id"]))
+        steps.append(step("Sensitive-action check", "stop",
+                          f"'{m.group(0).lower()}' needs a human: queued for an admin, the model was never called", t))
         return {"status": "pending_approval", "approval_id": row["id"], "conversation_id": conv, "sources": [],
+                "steps": steps,
                 "answer": "This request needs human approval. It has been sent to an admin for review."}
-    result = chat(body.question, load_history(p, conv, settings.memory_turns), p)
+    steps.append(step("Sensitive-action check", "pass", "no delete, export, send or policy-change request", t))
+    t = time.perf_counter()
+    history = load_history(p, conv, settings.memory_turns)
+    steps.append(step("Conversation memory", "info",
+                      f"loaded {len(history)} earlier message{'s' if len(history) != 1 else ''} from Postgres"
+                      if history else "new conversation, no earlier messages", t))
+    try:
+        result = chat(body.question, history, p, steps)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:  # free-tier LLM quota used up
+            raise HTTPException(503, "The demo's free AI quota is used up for now. Please try again later.")
+        raise
     save_turn(p, conv, body.question, result["answer"])
     if result["status"] == "guardrail_blocked":
         audit(p["sub"], p["tenant"], "guardrail_output_blocked", conversation_id=conv)
     return {"answer": result["answer"], "sources": result.get("sources", []),
-            "status": result["status"], "conversation_id": conv}
+            "status": result["status"], "conversation_id": conv, "steps": result.get("steps", [])}
 
 
 @app.get("/api/conversations/{conversation_id}/messages")
