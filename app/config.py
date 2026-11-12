@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     aws_default_region: str = "us-east-1"
     s3_bucket: str = "atlas-docs"
     max_upload_bytes: int = 10 * 1024 * 1024
+    max_chunks: int = 0  # per document; 0 = unlimited. Hosted: protects the free LLM quota
 
     # Ollama stands in for Bedrock (Titan embeddings + Nova Lite)
     ollama_url: str = "http://localhost:11434"

@@ -1,4 +1,7 @@
 """LLM + embeddings, standing in for Bedrock. Gemini when GEMINI_API_KEY is set (hosted), else local Ollama."""
+import re
+import time
+
 import httpx
 
 from app.config import settings
@@ -17,9 +20,25 @@ def embed_model_name() -> str:
     return settings.gemini_embed_model if settings.gemini_api_key else settings.embed_model
 
 
-def _gemini(method: str, body: dict) -> dict:
-    r = httpx.post(f"{GEMINI_URL}/{method}", json=body, timeout=120,
-                   headers={"x-goog-api-key": settings.gemini_api_key})
+def _retry_delay(r: httpx.Response, attempt: int) -> float:
+    """Seconds Gemini asks us to wait (RetryInfo.retryDelay, e.g. "17s"), else exponential backoff."""
+    try:
+        for d in r.json()["error"]["details"]:
+            if d.get("@type", "").endswith("RetryInfo") and (m := re.match(r"([\d.]+)s", d.get("retryDelay", ""))):
+                return float(m.group(1))
+    except (ValueError, KeyError, TypeError):
+        pass
+    return 2.0 ** attempt
+
+
+def _gemini(method: str, body: dict, attempts: int = 4, max_wait: float = 30.0) -> dict:
+    # The free tier limits requests per minute; waiting out a 429 beats failing a whole upload.
+    for attempt in range(attempts):
+        r = httpx.post(f"{GEMINI_URL}/{method}", json=body, timeout=120,
+                       headers={"x-goog-api-key": settings.gemini_api_key})
+        if r.status_code not in (429, 503) or attempt == attempts - 1:
+            break
+        time.sleep(min(_retry_delay(r, attempt), max_wait))
     r.raise_for_status()
     return r.json()
 

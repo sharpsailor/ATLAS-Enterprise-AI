@@ -84,6 +84,8 @@ def test_gemini_payloads():
     sent = []
 
     class Resp:
+        status_code = 200
+
         def __init__(self, body): self.body = body
         def raise_for_status(self): pass
         def json(self): return self.body
@@ -107,6 +109,36 @@ def test_gemini_payloads():
         assert body["systemInstruction"]["parts"][0]["text"] == "sys"
     finally:
         llm.httpx.post, settings.gemini_api_key = old_post, old_key
+
+
+def test_gemini_retries_429():
+    from app import llm
+    calls = []
+
+    class Resp:
+        def __init__(self, code, body): self.status_code, self.body = code, body
+        def json(self): return self.body
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise llm.httpx.HTTPStatusError("x", request=None, response=self)
+
+    limited = {"error": {"details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "7s"}]}}
+    replies = [Resp(429, limited), Resp(200, {"ok": 1})]
+    slept = []
+    old_post, old_sleep = llm.httpx.post, llm.time.sleep
+    llm.httpx.post = lambda *a, **k: calls.append(1) or replies.pop(0)
+    llm.time.sleep = slept.append
+    try:
+        assert llm._gemini("m", {}) == {"ok": 1} and len(calls) == 2 and slept == [7.0]  # honours retryDelay
+        replies[:] = [Resp(429, {})] * 4
+        try:
+            llm._gemini("m", {})
+            raise AssertionError("expected 429 after retries")
+        except llm.httpx.HTTPStatusError:
+            pass
+        assert slept[1:] == [1.0, 2.0, 4.0]  # exponential when no delay given, then gives up
+    finally:
+        llm.httpx.post, llm.time.sleep = old_post, old_sleep
 
 
 def test_password_gate():
