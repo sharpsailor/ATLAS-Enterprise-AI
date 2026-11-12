@@ -28,8 +28,9 @@ def embed(texts: list[str], query: bool = False) -> list[list[float]]:
         model = settings.gemini_embed_model
         vectors = [e["values"] for e in _gemini(f"{model}:batchEmbedContents", {"requests": [
             {"model": f"models/{model}", "content": {"parts": [{"text": t}]},
-             "embedContentConfig": {"taskType": "RETRIEVAL_QUERY" if query else "RETRIEVAL_DOCUMENT",
-                                    "outputDimensionality": settings.embed_dim}} for t in texts]})["embeddings"]]
+             # Top-level on purpose: the REST API silently ignores these inside embedContentConfig (tested live).
+             "taskType": "RETRIEVAL_QUERY" if query else "RETRIEVAL_DOCUMENT",
+             "outputDimensionality": settings.embed_dim} for t in texts]})["embeddings"]]
     else:
         if query:
             texts = [OLLAMA_QUERY_PREFIX + t for t in texts]

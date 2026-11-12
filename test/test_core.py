@@ -98,7 +98,7 @@ def test_gemini_payloads():
     llm.httpx.post, settings.gemini_api_key = fake_post, "test-key"
     try:
         assert len(llm.embed(["a", "b"], query=True)) == 2
-        req = sent[-1][1]["requests"][0]["embedContentConfig"]
+        req = sent[-1][1]["requests"][0]
         assert req["taskType"] == "RETRIEVAL_QUERY" and req["outputDimensionality"] == settings.embed_dim
         assert llm.answer("sys", [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"},
                                   {"role": "user", "content": "q2"}]) == "Answer [1]"

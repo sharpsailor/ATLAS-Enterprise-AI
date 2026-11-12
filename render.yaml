@@ -4,6 +4,7 @@ services:
     name: atlas
     runtime: python
     plan: free
+    region: virginia
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
     healthCheckPath: /health/live
