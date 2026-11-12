@@ -190,7 +190,8 @@ app/
   observability.py  Optional Rius tracing
   config.py         Settings from env / .env
   templates/, static/   Single-page UI
-worker/ingest.py    Parse → chunk → embed → upsert, with status tracking
+worker/ingest.py    Chunk → embed → upsert, with status tracking
+worker/parse.py     Parses uploads in a memory/CPU/time-limited child process
 infra/              schema.sql, LocalStack init script
 scripts/init_db.py  Creates the tables
 test/               test_core.py (offline), test.py (Ollama smoke test)

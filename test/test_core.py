@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.guardrails import check_output, classify_input  # noqa: E402
 from app.main import SENSITIVE  # noqa: E402
-from worker.ingest import chunk, parse  # noqa: E402
+from worker.ingest import chunk  # noqa: E402
+from worker.parse import parse, parse_isolated  # noqa: E402
 
 
 def test_input_guardrail():
@@ -47,7 +48,7 @@ def test_parse_caps():
     import io
     import zipfile
 
-    from worker import ingest
+    from worker import parse as ingest
     old = ingest.MAX_UNZIPPED_BYTES, ingest.MAX_TEXT_CHARS
     ingest.MAX_UNZIPPED_BYTES, ingest.MAX_TEXT_CHARS = 1000, 50
     try:
@@ -63,6 +64,17 @@ def test_parse_caps():
         assert ingest.parse("ok.txt", b"x" * 50) == [(1, "x" * 50)]
     finally:
         ingest.MAX_UNZIPPED_BYTES, ingest.MAX_TEXT_CHARS = old
+
+
+def test_parse_isolated():
+    assert parse_isolated("a.md", b"hello") == [(1, "hello")]
+    for name, data, kw in (("bad.docx", b"not a zip", {}),               # parser error comes back as ValueError
+                           ("big.txt", b"x" * 80_000_000, {"memory": 120 * 1024 * 1024})):  # memory cap hit
+        try:
+            parse_isolated(name, data, **kw)
+            raise AssertionError(f"{name} was not rejected")
+        except ValueError as e:
+            print("   rejected", name, "->", e)
 
 
 def test_gemini_payloads():
